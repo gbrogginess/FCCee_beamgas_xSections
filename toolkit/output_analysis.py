@@ -1,10 +1,10 @@
 """
-Produces .json output files containing information on interaction processes and cross sections
+Produces a .json output containing information on Coulomb scattering cross section and angular kicks
 --------------------------------------------------------------------------------
 
-Using the root file (BDSIM output), this script produces output files containing information on:
-- interaction processes
-- cross sections
+Using the root file (BDSIM output), this script produces an output file containing information:
+- Coulomb scattering cross section
+- Coulomb scattering angular kicks, delta_px and delta_py [rad]
 
 *--Required--*
 - **root_file** *(str)*: Path to the root file (BDSIM output).
@@ -60,23 +60,31 @@ def get_params():
 def main(inp):
     df_g4_processes = pd.read_csv('../g4_processes.csv')
     output_data = pybdsim.Data.Load(inp.root_file)
+    samplerData = pybdsim.Data.SamplerData(output_data, 1).data
 
     n_primaries = get_n_primaries(output_data)
     primaries_dict = {'n_primaries': n_primaries, 'Part_ID': -11, 'p0c': P0C} 
 
+    weights = samplerData['weight']
+
     trajectories = get_trajectories(output_data, n_primaries)
 
-    interaction_processes = get_interaction_processes(trajectories, df_g4_processes)
-    interaction_processes = {'Primaries': primaries_dict, 'Processes': interaction_processes}
+    mask_CoulombScat = get_CoulombScat_processes(trajectories)
 
-    number_surface_density = get_number_surface_density(inp.gas)
+    # For elastic Coulomb scattering the conversion BDSIM --> Xsuite is not necessary
+    # as delta=0 for elastic processes and px = xp*(1+delta) => px = xp
+    delta_px, delta_py = get_angular_kicks(output_data, mask_CoulombScat, 'xsuite')
 
-    cross_sections = {key: value / (n_primaries * number_surface_density) for key, value in interaction_processes['Processes'].items()}
-    total_cross_section = {'Total': sum(cross_sections.values())}
-    cross_sections = {**total_cross_section, **cross_sections}
-    cross_sections = {'Primaries': primaries_dict, 'Cross sections': cross_sections}
+    number_surface_density = get_number_surface_density(inp.gas) # [cm^-2]
 
-    return save_to_json(inp.gas, interaction_processes, cross_sections)
+    n_CoulombScat = sum(weights[mask_CoulombScat])
+    cross_section_CoulombScat = n_CoulombScat / (n_primaries * number_surface_density)
+    cross_section = {'CoulombScat': cross_section_CoulombScat}
+
+    angular_kicks_dict = {'n_CoulombScat': len(weights[mask_CoulombScat]), 'delta_px': delta_px.tolist(), 'delta_py': delta_py.tolist()}
+    output_analysis = {'Primaries': primaries_dict, 'Cross section': cross_section, 'Angular kicks': angular_kicks_dict}
+
+    return save_to_json(inp.gas, output_analysis)
 
 
 def get_n_primaries(output_data):
@@ -87,43 +95,52 @@ def get_n_primaries(output_data):
 def get_trajectories(output_data, n_primaries):
 
     trajectories = []
+    keys_of_interest = ['px', 'py', 'postPT', 'postPST']
 
     for i in range(n_primaries):
         trajectory = pybdsim.Data.TrajectoryData(output_data, i).trajectories[0]
-        trajectories.append(trajectory)
+        trajectory_reduced = subset_dict = {key: trajectory[key] for key in keys_of_interest if key in trajectory}
+        trajectories.append(trajectory_reduced)
 
-    return trajectories
+    return np.array(trajectories)
 
 
-def get_interaction_processes(trajectories, df_g4_processes):
+def get_CoulombScat_processes(trajectories):
 
-    process_names = df_g4_processes['TypeName'].values
-    interaction_processes = {process_name: 0 for process_name in process_names}
+    mask_CoulombScat = [False] * len(trajectories)
 
-    for trajectory in trajectories:
+    for index, trajectory in enumerate(trajectories):
 
         # I am assuming that taking the post process and subprocess type is correct
         # to double check
         processType = trajectory['postPT']
         processSubType = trajectory['postPST']
 
-        mask_transport = np.abs(processType) == 1
-        processType = processType[~mask_transport]
-        processSubType = processSubType[~mask_transport]
+        if np.any((processType == 2) & (processSubType == 1)): # CoulombScat has PT=2 and PST=1
+            mask_CoulombScat[index] = True
 
-        for i, j in zip(processType, processSubType):
+    return np.array(mask_CoulombScat)
 
-            mask_process = (i == df_g4_processes['ProcessType']) & (j == df_g4_processes['SubType'])
-            process_name = df_g4_processes[mask_process]['TypeName'].iloc[0]
 
-            if process_name in interaction_processes:
-                interaction_processes[process_name] += 1
-            else:
-                raise ValueError(f'Process {process_name} not found in list of processes.')
-            
-    interaction_processes = dict(sorted(interaction_processes.items(), key=lambda x: x[1], reverse=True))
+def get_angular_kicks(output_data, mask_CoulombScat, format):
 
-    return interaction_processes
+    samplerData = pybdsim.Data.SamplerData(output_data, 1).data
+
+    delta_xp = samplerData['xp'][mask_CoulombScat] - 0
+    delta_yp = samplerData['yp'][mask_CoulombScat] - 0
+
+    if format == 'bdsim':
+        return delta_xp, delta_yp
+
+    elif format == 'xsuite':
+        delta = (samplerData['p'][mask_CoulombScat]*1e9) / P0C - 1
+        delta_px = delta_xp * (1+delta)
+        delta_py = delta_yp * (1+delta)
+
+        return delta_px, delta_py
+    
+    else:
+        raise ValueError(f'Format {format} not recognized.')
 
 
 def get_number_surface_density(gas):
@@ -138,13 +155,10 @@ def get_number_surface_density(gas):
         raise ValueError(f'Gas {gas} not recognized.')
     
 
-def save_to_json(gas, interaction_processes, cross_sections):
+def save_to_json(gas, output_analysis):
 
-    with open(f'{gas}_interaction_processes.json', 'w') as jsonfile:
-        json.dump(interaction_processes, jsonfile, indent=4)
-
-    with open(f'{gas}_cross_sections.json', 'w') as jsonfile:
-        json.dump(cross_sections, jsonfile, indent=4)
+    with open(f'FCCee_z_CoulombScat_{gas}.json', 'w') as jsonfile:
+        json.dump(output_analysis, jsonfile, indent=4)
 
     return
         

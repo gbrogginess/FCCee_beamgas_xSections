@@ -9,9 +9,12 @@ beam,  particle = "positron",
        Xp0=0.0*mrad,
        Yp0=0.0*mrad;
 
-solidCO: matdef, density=8.96, T=293.15, components=["C","O"], componentsWeights={1,1};
+biasDef: xsecBias, particle="e+", proc="msc eIoni eBrem annihil CoulombScat positronNuclear",
+                                  xsecfact={0, 0, 0, 0, 1000, 0}, flag={1, 1, 1, 1, 1, 1};
 
-myTarget : rcol, l=1*mm, xsize=0*mm, ysize=0*mm, material="solidCO";
+solidCO2: matdef, density=8.96, T=293.15, components=["C","O"], componentsWeights={1,2};
+
+myTarget : rcol, l=1*mm, xsize=0*mm, ysize=0*mm, material="solidCO2", bias="biasDef";
 
 beamLine: line = (myTarget);
 use, beamLine;
