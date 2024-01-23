@@ -3,9 +3,10 @@
 Repository for computing FCC-ee beam-gas interaction cross sections using BDSIM.
 
 In the `scripts` directory, scripts for running BDSIM simulations for the gas species of interest for FCC-ee (H, CO, CO2) can be found.
-To run the scripts, execute the following command:
+To run the scripts, execute the following commands:
 
 ```bash
+mkdir output
 bdsim --file=scripts/scriptname.gmad --batch --ngenerate={n_particles} --outfile=output/outputname
 ```
 
