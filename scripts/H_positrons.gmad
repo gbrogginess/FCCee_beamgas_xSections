@@ -1,0 +1,30 @@
+! FCC-ee Z operation mode
+p0c = 45600000000*eV;
+
+beam,  particle = "positron",
+       momentum = p0c,
+       distrType="reference",
+       X0=0.0*mm,
+       Y0=0.0*mm,
+       Xp0=0.0*mrad,
+       Yp0=0.0*mrad;
+
+myTarget : rcol, l=1*mm, xsize=0*mm, ysize=0*mm, material="solidhydrogen";
+
+beamLine: line = (myTarget);
+use, beamLine;
+
+sample, all;
+
+option, physicsList = "g4FTFP_BERT";
+
+option, worldMaterial="G4_Galactic";
+
+option, storeTrajectories = 1,
+        storeTrajectoryProcesses = 1,
+        storeTrajectoryTransportationSteps = 0,
+        storeTrajectoryParticleID = "-11";
+
+option, stopSecondaries=1;
+
+option, checkOverlaps=1;
