@@ -15,6 +15,7 @@ This will generate a root file (BDSIM output) named `outputname.root` in the `ou
 With the `output_analysis.py` script in the `toolkit` directory, it is possible to analize the BDSIM output and produce output files in the `toolkit` containing:
   - The interaction processes that the particles have experienced
   - The cross sections for each process
+
 To do so, execute the following command from the `toolkit` directory:
 ```bash
 python3 output_analysis.py --root_file=../output/outputname.root --gas={gas}
